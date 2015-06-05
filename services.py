@@ -122,7 +122,12 @@ def get_zone_for_vpc(vpc_id):
 
 
 def get_service_info(family):
-    info = {'vpc_id': None, "name": family[:-8], "service_ips": []}
+    info = {
+        "vpc_id": None,
+        "family": family,
+        "name": family[:-8],
+        "service_ips": []
+    }
 
     if family[-8:] != '-service':
         log('    (Found non-service {0})'.format(family))
