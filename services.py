@@ -18,10 +18,15 @@ import logging
 import os
 import re
 import boto
+import boto.ec2
+import boto.route53
 
-ecs = boto.connect_ec2containerservice()
-ec2 = boto.connect_ec2()
-route53 = boto.connect_route53()
+
+region = os.environ.get('ECS_REGION', 'us-east-1')
+ecs = boto.connect_ec2containerservice(
+        host='ecs.{0}.amazonaws.com'.format(region))
+ec2 = boto.ec2.connect_to_region(region)
+route53 = boto.route53.connect_to_region(region)
 
 logging.basicConfig(format='%(asctime)s %(message)s',
                     datefmt='%Y/%m/%d/ %I:%M:%S %p')
