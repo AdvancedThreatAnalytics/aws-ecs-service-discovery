@@ -20,6 +20,7 @@ import re
 import boto
 import boto.ec2
 import boto.route53
+from time import sleep
 
 
 region = os.environ.get('ECS_REGION', 'us-east-1')
@@ -138,6 +139,7 @@ def get_service_info(family):
     service_arns = get_task_arns(family)
     if not service_arns:
         log('{0} is not running'.format(family))
+        return None
     else:
         log('{0} is RUNNING'.format(family))
 
@@ -208,11 +210,16 @@ def cli():
     parser.add_argument('service_names', nargs='*',
                         help='list of services to start')
     parser.add_argument('-q', '--quiet', action='store_true',
-                        help='supress output')
+                        help='suppress output')
+    parser.add_argument('-r', '--rerun', action='store_true',
+                        help='run again after a 60 second pause')
     args = parser.parse_args()
     if not args.quiet:
         logging.getLogger().setLevel(logging.INFO)
     update_services(args.service_names, True)
+    if args.rerun:
+        sleep(60)
+        update_services(args.service_names, True)
 
 pattern_arn = re.compile(
     'arn:'
