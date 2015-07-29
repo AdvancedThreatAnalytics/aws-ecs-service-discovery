@@ -17,15 +17,23 @@ import argparse
 import logging
 import os
 import re
+import json
 import boto
+import boto.ec2
+import boto.route53
+import requests
+from etcd.client import Client
+from time import sleep
 
-ecs = boto.connect_ec2containerservice()
-ec2 = boto.connect_ec2()
-route53 = boto.connect_route53()
+
+region = os.environ.get('ECS_REGION', 'us-east-1')
+ecs = boto.connect_ec2containerservice(
+        host='ecs.{0}.amazonaws.com'.format(region))
+ec2 = boto.ec2.connect_to_region(region)
+route53 = boto.route53.connect_to_region(region)
 
 logging.basicConfig(format='%(asctime)s %(message)s',
                     datefmt='%Y/%m/%d/ %I:%M:%S %p')
-log = logging.info
 
 if 'ECS_CLUSTER' in os.environ:
     cluster = os.environ['ECS_CLUSTER']
@@ -36,76 +44,36 @@ else:
     cluster = None
 
 
-class MultipleTasksRunningForService(Exception):
-
-    """It's assumed that there should be only 1 task running for a service.
-
-    Am I wrong? Tell me.
+def get_task_arns(family):
+    """
+    Get the ARN of running task, given the family name.
     """
 
-    pass
-
-
-def get_task_definition_arns():
-    """Request all API pages needed to get Task Definition ARNS."""
-    next_token = []
-    arns = []
-    while next_token is not None:
-        detail = ecs.list_task_definitions(next_token=next_token)
-        detail = detail['ListTaskDefinitionsResponse']
-        detail = detail['ListTaskDefinitionsResult']
-        arns.extend(detail['taskDefinitionArns'])
-        next_token = detail['nextToken']
-    return arns
-
-
-def get_task_definition_families():
-    """Ignore duplicate tasks in the same family."""
-    arns = get_task_definition_arns()
-    families = {}
-    for arn in arns:
-        match = pattern_arn.match(arn)
-        if match:
-            groupdict = match.groupdict()
-            families[groupdict['family']] = True
-    return families.keys()
-
-
-def get_task_arn(family):
-    """Get the ARN of running task, given the family name."""
     response = ecs.list_tasks(cluster=cluster, family=family)
     arns = response['ListTasksResponse']['ListTasksResult']['taskArns']
     if len(arns) == 0:
         return None
-    if len(arns) > 1:
-        raise MultipleTasksRunningForService
-    return arns[0]
+    return arns
 
 
-def get_task_container_instance_arn(task_arn):
-    """Get the ARN for the container instance a give task is running on."""
-    response = ecs.describe_tasks(task_arn, cluster=cluster)
-    response = response['DescribeTasksResponse']
-    return response['DescribeTasksResult']['tasks'][0]['containerInstanceArn']
 
+def get_ec2_interface(container_instance_arn):
+    """
+    Get the ec2 interface from an container instance ARN. 
+    """
 
-def get_container_instance_ec2_id(container_instance_arn):
-    """Id the EC2 instance serving as the container instance."""
-    detail = ecs.describe_container_instances(
-        container_instances=container_instance_arn, cluster=cluster)
-    detail = detail['DescribeContainerInstancesResponse']
-    detail = detail['DescribeContainerInstancesResult']['containerInstances']
-    return detail[0]['ec2InstanceId']
+    response = ecs.describe_container_instances(container_instance_arn, cluster=cluster)
+    ec2_instance_id = response['DescribeContainerInstancesResponse'] \
+        ['DescribeContainerInstancesResult']['containerInstances'] \
+        [0]['ec2InstanceId']
 
-
-def get_ec2_interface(ec2_instance_id):
-    """Get the primary interface for the given EC2 instance."""
-    return ec2.get_all_instances(filters={
-        'instance-id': ec2_instance_id})[0].instances[0].interfaces[0]
+    response = ec2.get_all_instances(filters={'instance-id': ec2_instance_id})
+    return response[0].instances[0].interfaces[0]
 
 
 def get_zone_for_vpc(vpc_id):
-    """Identify the Hosted Zone for the given VPC.
+    """
+    Identify the Hosted Zone for the given VPC.
 
     Assumes a 1 to 1 relationship.
 
@@ -117,100 +85,117 @@ def get_zone_for_vpc(vpc_id):
     one VPC. (But, why would you expect internal DNS for 2 different private
     networks to be the same anyway?)
     """
+
     response = route53.get_all_hosted_zones()['ListHostedZonesResponse']
     for zone in response['HostedZones']:
         zone_id = zone['Id'].split('/')[-1]
         detail = route53.get_hosted_zone(zone_id)['GetHostedZoneResponse']
-        if detail['VPCs']['VPC']['VPCId'] == vpc_id:
-            return {'zone_id': zone_id, 'zone_name': zone['Name']}
+        try:
+            if detail['VPCs']['VPC']['VPCId'] == vpc_id:
+                return {'zone_id': zone_id, 'zone_name': zone['Name']}
+        except KeyError:
+            pass
 
 
-def get_info():
-    """Get all needed info about running services.
+def get_service_info(service_name):
+    info = {
+        "name": service_name,
+        "tasks": []
+    }
 
-    WARNING: locals() is used to assemble the returned dictionary. Any
-    variables defined in this function must begine with _ to be kept out of the
-    return value.
+    if service_name[-8:] == '-service':
+        info['name'] = service_name[:-8]
+
+    task_arns = get_task_arns(service_name)
+    if not task_arns:
+        logging.info('{0} is NOT RUNNING'.format(service_name))
+        return None
+    else:
+        logging.info('{0} is RUNNING'.format(service_name))
+
+        data = ecs.describe_tasks(task_arns, cluster=cluster)
+        tasks = data['DescribeTasksResponse']['DescribeTasksResult']['tasks']
+        for task in tasks:
+            interface = get_ec2_interface(task['containerInstanceArn'])
+            task_info = {
+                'ip': interface.private_ip_address,
+                'ports': {}
+            }
+
+            for container in task['containers']:
+                for port in container['networkBindings']:
+                    if port['protocol'] == 'tcp':
+                        task_info['ports'][port['containerPort']] = port['hostPort']
+
+            info['tasks'].append(task_info)
+            info['vpc_id'] = interface.vpc_id
+
+    return info
+
+
+def update_dns(zone_id, zone_name, service_name, service_ips, ttl=20):
     """
-    _info = {'services': [], 'network': {'cluster': cluster}}
-    _families = get_task_definition_families()
-    for family in _families:
-        if family[-8:] != '-service':
-            log('    (Found non-service {family})'.format(**locals()))
-            continue
-        log('{family} service found'.format(**locals()))
-        service_arn = get_task_arn(family)
-        if not service_arn:
-            # task is not running, skip it
-            log('{family} is not running'.format(**locals()))
-            continue
-        log('{family} is RUNNING'.format(**locals()))
-        name = family[:-8]
-        container_instance_arn = get_task_container_instance_arn(service_arn)
-        ec2_instance_id = get_container_instance_ec2_id(container_instance_arn)
-        ec2_interface = get_ec2_interface(ec2_instance_id)
-        container_instance_internal_ip = ec2_interface.private_ip_address
-        _services = {k: v for (k, v) in locals().iteritems() if k[0] != '_'}
-        _info['services'].append(_services)
-        # No need to get common network info on each loop over tasks
-        if 'vpc_id' not in _info['network']:
-            _info['network'].update(get_zone_for_vpc(ec2_interface.vpc_id))
-            _info['network']['vpc_id'] = ec2_interface.vpc_id
-    return _info
-
-
-def dns(zone_id, zone_name, service_name, service_ip, ttl=20):
-    """Insert or update DNS record."""
-    rrs = boto.route53.record.ResourceRecordSets(route53, zone_id)
-    rrs.add_change('UPSERT', '{service_name}.{zone_name}'.format(**locals()),
-                   'A', ttl).add_value(service_ip)
-    rrs.commit()
-    return rrs
-
-
-def update_services(service_names=[], verbose=False):
-    """Update DNS to allow discovery of properly named task definitions.
-
-    If service_names are provided only update those services.
-    Otherwise update all.
+    Insert or update DNS record.
     """
-    info = get_info()
-    for service in info['services']:
-        if (service_names and
-                service['family'] not in service_names and
-                service['name'] not in service_names):
-            continue
-        if verbose:
-            log('Registering {0}.{1} as {2}'.format(
-                service['name'], info['network']['zone_name'],
-                service['container_instance_internal_ip']))
-        dns(info['network']['zone_id'], info['network']['zone_name'],
-            service['name'], service['container_instance_internal_ip'])
+
+    host_name = '.'.join([service_name, zone_name])
+    record_set = boto.route53.record.ResourceRecordSets(route53, zone_id)
+    record = record_set.add_change('UPSERT', host_name, 'A', ttl)
+    for service_ip in service_ips:
+        record.add_value(service_ip)
+    record_set.commit()
+    return record_set
 
 
-def cli():
-    """Used by entry_point console_scripts."""
+def update_service(service_name, method):
+    """
+    Update DNS to allow discovery of properly named task definitions.
+
+    """
+
+    info = get_service_info(service_name)
+    if not info:
+        return None
+
+    if method == 'dns':
+        network = get_zone_for_vpc(info["vpc_id"])
+        ips = [t['ip'] for t in info['tasks']]
+        logging.info('Registering {0}.{1} as {2}'.format(
+                     info['name'], network['zone_name'], ','.join(ips)))
+
+        update_dns(network['zone_id'], network['zone_name'],
+                   info['name'], ips)
+    elif method == 'etcd':
+        host = requests.get("http://169.254.169.254/latest/meta-data/local-ipv4").content
+        client = Client(host=host, port=4001)
+        client.node.set('/test', json.dumps(info))
+        print client.node.get('/test').node.value
+
+
+def main():
+    """
+    Main function that handles running the command.
+    """
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('service_names', nargs='*',
+    parser.add_argument('service_name', nargs=1,
                         help='list of services to start')
+    parser.add_argument('method', nargs=1,
+                        help='method of registering service')
     parser.add_argument('-q', '--quiet', action='store_true',
-                        help='supress output')
+                        help='suppress output')
+    parser.add_argument('-r', '--rerun', action='store_true',
+                        help='run again after a 60 second pause')
     args = parser.parse_args()
+
     if not args.quiet:
         logging.getLogger().setLevel(logging.INFO)
-    update_services(args.service_names, True)
 
-pattern_arn = re.compile(
-    'arn:'
-    '(?P<partition>[^:]+):'
-    '(?P<service>[^:]+):'
-    '(?P<region>[^:]*):'   # region is optional
-    '(?P<account>[^:]*):'  # account is optional
-    '(?P<resourcetype>[^:/]+)([:/])'
-    '(?P<resource>('
-        '(?P<family>[^:]+):'     # noqa
-        '(?P<version>[^:]+)|.*'  # noqa
-    '))')
+    update_service(args.service_name[0], args.method[0])
+    if args.rerun:
+        sleep(60)
+        update_service(args.service_name[0], args.method[0])
+
 
 if __name__ == '__main__':
-    cli()
+    main()
