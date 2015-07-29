@@ -9,6 +9,7 @@ setup(
     ],
     entry_points='''
         [console_scripts]
-        awsesd=services:cli
+        aws-register=register:main
+        aws-discover=discover:main
     ''',
 )
