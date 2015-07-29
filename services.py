@@ -160,16 +160,21 @@ def update_service(service_name, method):
     if method == 'dns':
         network = get_zone_for_vpc(info["vpc_id"])
         ips = [t['ip'] for t in info['tasks']]
+
         logging.info('Registering {0}.{1} as {2}'.format(
                      info['name'], network['zone_name'], ','.join(ips)))
 
         update_dns(network['zone_id'], network['zone_name'],
                    info['name'], ips)
     elif method == 'etcd':
+        data = json.dumps(info['tasks'])
+        logging.info('Registering {0} as {1}'.format(
+                     info['name'], data))
+
         host = requests.get("http://169.254.169.254/latest/meta-data/local-ipv4").content
+
         client = Client(host=host, port=4001)
-        client.node.set('/test', json.dumps(info))
-        print client.node.get('/test').node.value
+        client.node.set('/tasks/{0}'.format(info['name']), data)
 
 
 def main():
