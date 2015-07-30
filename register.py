@@ -147,7 +147,7 @@ def update_dns(zone_id, zone_name, service_name, service_ips, ttl=20):
     return record_set
 
 
-def update_service(service_name, method):
+def update_service(service_name, method, prefix):
     """
     Update DNS to allow discovery of properly named task definitions.
 
@@ -174,7 +174,8 @@ def update_service(service_name, method):
         host = requests.get("http://169.254.169.254/latest/meta-data/local-ipv4").content
 
         client = Client(host=host, port=4001)
-        client.node.set('/tasks/{0}'.format(info['name']), data)
+        key = '/' + '/'.join([i for i in ['tasks', prefix, info['name']] if i])
+        client.node.set(key, data)
 
 
 def main():
@@ -187,6 +188,8 @@ def main():
                         help='list of services to start')
     parser.add_argument('method', nargs=1,
                         help='method of registering service')
+    parser.add_argument('-p', '--prefix', action='store', default=False,
+                        help='prefix when saving to etcd')
     parser.add_argument('-q', '--quiet', action='store_true',
                         help='suppress output')
     parser.add_argument('-r', '--rerun', action='store_true',
@@ -196,10 +199,10 @@ def main():
     if not args.quiet:
         logging.getLogger().setLevel(logging.INFO)
 
-    update_service(args.service_name[0], args.method[0])
+    update_service(args.service_name[0], args.method[0], args.prefix)
     if args.rerun:
         sleep(60)
-        update_service(args.service_name[0], args.method[0])
+        update_service(args.service_name[0], args.method[0], args.prefix)
 
 
 if __name__ == '__main__':
