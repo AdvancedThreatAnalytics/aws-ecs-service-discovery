@@ -17,8 +17,6 @@ logging.basicConfig(format='%(asctime)s %(message)s',
 
 
 def generate_template(template, destination, command, **kwargs):
-    from pprint import pprint
-    pprint(kwargs)
     with open(template, 'r') as f:
         template_content = f.read()
 
