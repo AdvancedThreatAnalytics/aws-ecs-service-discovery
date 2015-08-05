@@ -1,4 +1,4 @@
-FROM dockerfile/python
+FROM python:2.7
 
 MAINTAINER Bruno Bronosky <richard@bronosky.com>
 
