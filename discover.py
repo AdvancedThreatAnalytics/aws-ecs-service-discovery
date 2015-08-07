@@ -57,11 +57,25 @@ def main():
     if not os.path.isfile(args.template[0]):
         raise Exception('Template does not exist: {0}'.format(args.template[0]))
 
+    client = Client(host=host, port=4001)
+    key = '/tasks/{0}'.format(args.key[0])
+
+    logging.info('Checking key: {0}'.format(key))
+    if args.recursive:
+        response = client.directory.list(key)
+        services = [{'service': n.key.split('/')[-1], 'tasks': json.loads(n.value)}
+                    for n in response.node.children]
+        generate_template(args.template[0], args.destination[0], args.command,
+                          services=services)
+    else:
+        response = client.node.get(key)
+        tasks = json.loads(response.node.value)
+        generate_template(args.template[0], args.destination[0], args.command,
+                          tasks=tasks)
+
     while True:
-        key = '/tasks/{0}'.format(args.key[0])
         logging.info('Waiting for key change: {0}'.format(key))
 
-        client = Client(host=host, port=4001)
         if args.recursive:
             try:
                 client.directory.wait(key, recursive=True)
