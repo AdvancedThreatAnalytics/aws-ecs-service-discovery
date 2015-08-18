@@ -8,6 +8,7 @@ import requests
 
 from etcd.client import Client
 from etcd.exceptions import EtcdWaitFaultException
+from httplib import IncompleteRead
 from jinja2 import Template
 from subprocess import call
 
@@ -80,7 +81,7 @@ def main():
             try:
                 client.directory.wait(key, recursive=True)
                 response = client.directory.list(key)
-            except EtcdWaitFaultException:
+            except (EtcdWaitFaultException, IncompleteRead):
                 pass
             else:
                 services = [{'service': n.key.split('/')[-1], 'tasks': json.loads(n.value)}
@@ -90,7 +91,7 @@ def main():
         else:
             try:
                 response = client.node.wait(key)
-            except EtcdWaitFaultException:
+            except (EtcdWaitFaultException, IncompleteRead):
                 pass
             else:
                 tasks = json.loads(response.node.value)
@@ -100,4 +101,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
