@@ -123,9 +123,10 @@ def get_service_info(service_name):
             }
 
             for container in task['containers']:
-                for port in container['networkBindings']:
-                    if port['protocol'] == 'tcp':
-                        task_info['ports'][port['containerPort']] = port['hostPort']
+                if container['networkBindings']:
+                    for port in container['networkBindings']:
+                        if port['protocol'] == 'tcp':
+                            task_info['ports'][port['containerPort']] = port['hostPort']
 
             info['tasks'].append(task_info)
             info['vpc_id'] = interface.vpc_id
