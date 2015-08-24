@@ -9,9 +9,9 @@ RUN echo 'DPkg::Post-Invoke {"/bin/rm -f /var/cache/apt/archives/*.deb || true";
     DEBIAN_FRONTEND=noninteractive apt-get install -y git python-pip
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y wget && \
-    wget http://ftp.us.debian.org/debian/pool/main/p/python-urllib3/python-urllib3_1.10.4-1_all.deb && \
-    dpkg -i python-urllib3_1.10.4-1_all.deb && \
-    rm python-urllib3_1.10.4-1_all.deb && \
+    wget http://ftp.us.debian.org/debian/pool/main/p/python-urllib3/python-urllib3_1.11-1_all.deb && \
+    dpkg -i python-urllib3_1.11-1_all.deb && \
+    rm python-urllib3_1.11-1_all.deb && \
     wget http://ftp.us.debian.org/debian/pool/main/r/requests/python-requests_2.7.0-3_all.deb && \
     dpkg -i python-requests_2.7.0-3_all.deb && \
     rm python-requests_2.7.0-3_all.deb && \
