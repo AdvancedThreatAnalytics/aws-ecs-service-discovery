@@ -11,6 +11,7 @@ import boto.ec2
 
 from socket import gethostbyname
 from boto.ec2.address import Address
+from boto.exception import EC2ResponseError
 from etcd.client import Client
 from etcd.exceptions import EtcdWaitFaultException
 from httplib import IncompleteRead
@@ -34,9 +35,13 @@ def domain2localip(domain):
 def isassociated(domain):
     public_ip = gethostbyname(domain)
     instance_id = requests.get("http://169.254.169.254/latest/meta-data/instance-id").content
-    addresses = ec2.get_all_addresses(addresses=[public_ip, ],
-                                      filters={"instance-id": instance_id})
-    return len(addresses) > 0
+    try:
+      addresses = ec2.get_all_addresses(addresses=[public_ip, ],
+                                        filters={"instance-id": instance_id})
+    except EC2ResponseError:
+      return False
+    else:
+      return len(addresses) > 0
 
 
 def generate_template(template, destination, command, **kwargs):
