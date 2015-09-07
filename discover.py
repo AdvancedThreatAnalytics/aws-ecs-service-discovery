@@ -34,8 +34,8 @@ def domain2localip(domain):
 def isassociated(domain):
     public_ip = gethostbyname(domain)
     instance_id = requests.get("http://169.254.169.254/latest/meta-data/instance-id").content
-    addresses = conn_ec2.get_all_addresses(addresses=[public_ip, ],
-                                           filters={"instance-id": instance_id})
+    addresses = ec2.get_all_addresses(addresses=[public_ip, ],
+                                      filters={"instance-id": instance_id})
     return len(addresses) > 0
 
 
