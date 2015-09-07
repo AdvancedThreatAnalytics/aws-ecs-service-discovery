@@ -6,6 +6,11 @@ import logging
 import json
 import requests
 
+import boto
+import boto.ec2
+
+from socket import gethostbyname
+from boto.ec2.address import Address
 from etcd.client import Client
 from etcd.exceptions import EtcdWaitFaultException
 from httplib import IncompleteRead
@@ -16,10 +21,21 @@ from subprocess import call
 logging.basicConfig(format='%(asctime)s %(message)s',
                     datefmt='%Y/%m/%d/ %I:%M:%S %p')
 
+region = os.environ.get('ECS_REGION', 'us-east-1')
+ec2 = boto.ec2.connect_to_region(region)
+
+
+def domain2localip(domain):
+    public_ip = gethostbyname(domain)
+    eip = ec2.get_all_addresses(addresses=[public_ip, ])[0]
+    return eip.private_ip_address
+
 
 def generate_template(template, destination, command, **kwargs):
     with open(template, 'r') as f:
         template_content = f.read()
+
+    kwargs['domain2LocalIP'] = domain2localip
 
     logging.info('Writing template: {0}'.format(destination))
     template = Template(template_content)
@@ -45,6 +61,8 @@ def main():
                         help='template testination')
     parser.add_argument('command', nargs='*',
                         help='command to run after generating template')
+    parser.add_argument('-e', '--etcd', action='store', default=None,
+                        help='etcd host to connect to')
     parser.add_argument('-r', '--recursive', action='store_true',
                         help='prefix when saving to etcd')
     parser.add_argument('-q', '--quiet', action='store_true',
@@ -54,7 +72,11 @@ def main():
     if not args.quiet:
         logging.getLogger().setLevel(logging.INFO)
 
-    host = requests.get("http://169.254.169.254/latest/meta-data/local-ipv4").content
+    if args.etcd:
+        host = gethostbyname(args.etcd)
+    else:
+        host = requests.get("http://169.254.169.254/latest/meta-data/local-ipv4").content
+
     if not os.path.isfile(args.template[0]):
         raise Exception('Template does not exist: {0}'.format(args.template[0]))
 
