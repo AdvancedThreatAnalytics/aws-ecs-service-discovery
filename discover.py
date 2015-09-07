@@ -31,11 +31,20 @@ def domain2localip(domain):
     return eip.private_ip_address
 
 
+def isassociated(domain):
+    public_ip = gethostbyname(domain)
+    instance_id = requests.get("http://169.254.169.254/latest/meta-data/instance-id").content
+    addresses = conn_ec2.get_all_addresses(addresses=[public_ip, ],
+                                           filters={"instance-id": instance_id})
+    return len(addresses) > 0
+
+
 def generate_template(template, destination, command, **kwargs):
     with open(template, 'r') as f:
         template_content = f.read()
 
     kwargs['domain2LocalIP'] = domain2localip
+    kwargs['isAssociated'] = isassociated
 
     logging.info('Writing template: {0}'.format(destination))
     template = Template(template_content)
