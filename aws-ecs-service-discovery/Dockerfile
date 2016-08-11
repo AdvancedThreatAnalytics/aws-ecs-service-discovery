@@ -16,7 +16,6 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y wget && \
     dpkg -i python-requests_2.7.0-3_all.deb && \
     rm python-requests_2.7.0-3_all.deb && \
     pip install git+https://github.com/ross-urban/aws-ecs-service-discovery.git#egg=ecs_discovery && \
-    pip install Jinja2 simplejson boto3 && \
-    pip install git+https://github.com/simonluijk/PythonEtcdClient.git#egg=etcd requests==2.7.0
+    pip install Jinja2 simplejson boto3
 
 CMD ["bash"]
