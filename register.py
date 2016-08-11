@@ -22,12 +22,15 @@ from time import sleep
 from botocore.exceptions import ClientError
 
 
+region = os.environ.get('ECS_REGION', 'us-west-2')
+
+
 def find(service_name, container_name, cluster='default', private=True):
     """
     finds the IP address of the currently running tasks of the service.
     :return None, if no tasks are running, or [list of IP addresses]
     """
-    client = boto3.client('ecs')
+    client = boto3.client('ecs', region_name=region)
     cluster = os.environ.get('CLUSTER', cluster)
     ipaddresses = []
     try:
@@ -81,7 +84,7 @@ def register(service_name, container_name, dns_entry,
     (running) container, by using find in either private or public DNS entries
     in Route 53
     """
-    route53 = boto3.client('route53')
+    route53 = boto3.client('route53', region_name=region)
     response = route53.list_hosted_zones(MaxItems='50')
     if response['ResponseMetadata']['HTTPStatusCode'] != 200:
         raise ValueError(response['ResponseMetadata'])
@@ -143,7 +146,7 @@ def register(service_name, container_name, dns_entry,
 
 
 def register_cname(dns_entry, target, private=True):
-    route53 = boto3.client('route53')
+    route53 = boto3.client('route53', region_name=region)
     response = route53.list_hosted_zones(MaxItems='50')
     if response['ResponseMetadata']['HTTPStatusCode'] != 200:
         raise ValueError(response['ResponseMetadata'])
@@ -238,12 +241,11 @@ def main():
     """
     Main function that handles running the command.
 
-    register    --service=portalapi \
-                --
+    register    --family=portalapi \
+                --container=gunicorn \
                 --dns=somethingelse.threatanalytics.io \
                 --cluster=ATAProduction \
                 --cname=somethingelse.internal.ata.com \
-                --comment=This is some comment
     """
 
     parser = argparse.ArgumentParser()
