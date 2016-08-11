@@ -61,7 +61,7 @@ def find(service_name, container_name, cluster='default', private=True):
         if response['ResponseMetadata']['HTTPStatusCode'] != 200:
             raise ValueError(response['ResponseMetadata'])
 
-        ec2 = boto3.resource('ec2')
+        ec2 = boto3.resource('ec2', region_name=region)
         for instance in response['containerInstances']:
             inst = ec2.Instance(instance['ec2InstanceId'])
             if private and inst.private_ip_address is not None:
