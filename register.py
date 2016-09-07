@@ -120,7 +120,7 @@ def register(service_name, container_name, dns_entry,
                 existing.append(rs['Value'])
             break
 
-    new = find(service_name, container_name, cluster)
+    new = find(service_name, container_name, cluster, private=private)
     if set(existing) != set(new):  # set resource records
         resource_record = {
             'Name': dns_entry,
@@ -217,7 +217,7 @@ def get_zone(zones, zone_name, private):
     return None
 
 
-def update_service(family, cluster, container, dns, cname=None):
+def update_service(family, cluster, container, dns, cname=None, public=False):
     """
     Update DNS to allow discovery of properly named task definitions.
     """
@@ -227,11 +227,16 @@ def update_service(family, cluster, container, dns, cname=None):
     if not ips:
         return None
 
-    print 'Registering {0}:{1} in cluster {2} as {3}'.format(
+    print 'Private DNS: Registering {0}:{1} in cluster {2} as {3}'.format(
         family, container, cluster, dns
     )
     register(family, container, dns, cluster=cluster)
 
+    if public:
+        print 'Public DNS: Registering {0}:{1} in cluster {2} as {3}'.format(
+            family, container, cluster, dns
+        )
+        register(family, container, dns, cluster=cluster, private=False)
     if cname:
         print 'Registering {0} as CNAME for {1}'.format(cname, dns)
         register_cname(dns_entry=cname, target=dns)
@@ -246,6 +251,8 @@ def main():
                 --dns=somethingelse.threatanalytics.io \
                 --cluster=ATAProduction \
                 --cname=somethingelse.internal.ata.com \
+                --rerun \
+                --public
     """
 
     parser = argparse.ArgumentParser()
@@ -264,6 +271,8 @@ def main():
                         help='suppress output')
     parser.add_argument('-r', '--rerun', action='store_true',
                         help='run again after a 60 second pause')
+    parser.add_argument('--public', action='store_true', default=False,
+                        help='add a public dns record (same as dns name)')
     args = parser.parse_args()
 
     if not args.quiet:
@@ -273,7 +282,8 @@ def main():
                    container=args.container,
                    cluster=args.cluster,
                    dns=args.dns,
-                   cname=args.cname)
+                   cname=args.cname,
+                   public=args.public)
     if args.rerun:
         sleep(60)
         update_service(family=args.family,
