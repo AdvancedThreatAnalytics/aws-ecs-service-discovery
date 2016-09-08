@@ -290,7 +290,8 @@ def main():
                        container=args.container,
                        cluster=args.cluster,
                        dns=args.dns,
-                       cname=args.cname)
+                       cname=args.cname,
+                       public=args.public)
 
 
 if __name__ == '__main__':
